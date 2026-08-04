@@ -4,6 +4,7 @@ import {
   serializeEvent,
   toEventDateTime,
 } from "../lib/google-calendar";
+import { getEffectiveTimeZone } from "../lib/preferences";
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
@@ -34,7 +35,7 @@ export default defineTool({
       .string()
       .optional()
       .describe(
-        "IANA timezone for timed events (e.g. America/New_York). Recommended when start/end lack an offset.",
+        "IANA timezone for timed events. Omit to use the user's effective timezone (travel override or home).",
       ),
     attendees: z
       .array(z.string().email())
@@ -74,6 +75,11 @@ export default defineTool({
     attendees,
   }) {
     const { calendar: alias, calendarId } = resolveCalendar(calendar);
+    const allDay =
+      /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end);
+    const zone = allDay
+      ? timeZone
+      : timeZone?.trim() || (await getEffectiveTimeZone());
     const client = getCalendarClient();
     const res = await client.events.insert({
       calendarId,
@@ -81,8 +87,8 @@ export default defineTool({
         summary,
         description,
         location,
-        start: toEventDateTime(start, timeZone),
-        end: toEventDateTime(end, timeZone),
+        start: toEventDateTime(start, zone),
+        end: toEventDateTime(end, zone),
         attendees: attendees?.map((email) => ({ email })),
       },
     });

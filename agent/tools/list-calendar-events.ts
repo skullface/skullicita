@@ -2,13 +2,15 @@ import {
   getCalendarClient,
   resolveCalendar,
   serializeEvent,
+  toListTimeBound,
 } from "../lib/google-calendar";
+import { getEffectiveTimeZone } from "../lib/preferences";
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
 export default defineTool({
   description:
-    "List Google Calendar events in a time range. Pass a configured calendar alias, or omit to use the default.",
+    "List Google Calendar events in a time range. Pass a configured calendar alias, or omit to use the default. timeMin/timeMax may be YYYY-MM-DD or ISO without offset — they are interpreted in the user's effective timezone (travel override or home).",
   inputSchema: z.object({
     calendar: z
       .string()
@@ -20,12 +22,20 @@ export default defineTool({
       .string()
       .optional()
       .describe(
-        "Inclusive start of the window as ISO-8601 / RFC3339. Defaults to now.",
+        "Inclusive start of the window. Prefer YYYY-MM-DD or RFC3339; bare datetimes use the effective timezone. Defaults to now.",
       ),
     timeMax: z
       .string()
       .optional()
-      .describe("Exclusive end of the window as ISO-8601 / RFC3339."),
+      .describe(
+        "Exclusive end of the window. Prefer YYYY-MM-DD or RFC3339; bare datetimes use the effective timezone.",
+      ),
+    timeZone: z
+      .string()
+      .optional()
+      .describe(
+        "Optional IANA timezone override for this call only. Omit to use the saved travel/home preference.",
+      ),
     query: z
       .string()
       .optional()
@@ -40,6 +50,7 @@ export default defineTool({
   }),
   outputSchema: z.object({
     calendar: z.string(),
+    timeZone: z.string(),
     count: z.number().int(),
     events: z.array(
       z.object({
@@ -63,13 +74,14 @@ export default defineTool({
       }),
     ),
   }),
-  async execute({ calendar, timeMin, timeMax, query, maxResults }) {
+  async execute({ calendar, timeMin, timeMax, timeZone, query, maxResults }) {
     const { calendar: alias, calendarId } = resolveCalendar(calendar);
+    const zone = timeZone?.trim() || (await getEffectiveTimeZone());
     const client = getCalendarClient();
     const res = await client.events.list({
       calendarId,
-      timeMin: timeMin ?? new Date().toISOString(),
-      timeMax,
+      timeMin: timeMin ? toListTimeBound(timeMin, zone) : new Date().toISOString(),
+      timeMax: timeMax ? toListTimeBound(timeMax, zone) : undefined,
       q: query,
       maxResults: maxResults ?? 20,
       singleEvents: true,
@@ -80,6 +92,6 @@ export default defineTool({
       .map(serializeEvent)
       .filter((event): event is NonNullable<typeof event> => event != null);
 
-    return { calendar: alias, count: events.length, events };
+    return { calendar: alias, timeZone: zone, count: events.length, events };
   },
 });

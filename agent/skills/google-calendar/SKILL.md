@@ -13,6 +13,7 @@ Calendars are addressed by opaque aliases from config — never by email or raw 
 - `create-calendar-event` — add an event. Timed events need ISO-8601 start/end (include offset or pass `timeZone`). All-day events use `YYYY-MM-DD` for both (end is exclusive).
 - `update-calendar-event` — change fields on an existing event by `eventId`. Only send fields that should change.
 - `delete-calendar-event` — remove an event by `eventId`.
+- `set-timezone` — get/set/clear the user's travel timezone preference (persists until cleared).
 
 ## Workflow
 
@@ -25,5 +26,8 @@ Calendars are addressed by opaque aliases from config — never by email or raw 
 
 ## Time
 
-- Interpret relative times ("tomorrow 3pm") in the user's implied timezone when known; otherwise ask once.
-- Prefer RFC3339 with offset or an explicit `timeZone` like `America/New_York`.
+- Home default is America/New_York. A travel override from `set-timezone` wins until cleared.
+- For `list-calendar-events`, prefer `YYYY-MM-DD` bounds (e.g. next week Mon→Sun+1). Bare datetimes are fine — the tool uses the effective timezone.
+- For create/update timed events, omit `timeZone` unless the user wants a one-off zone; the tools default to the effective timezone.
+- Interpret relative times ("tomorrow 3pm") in the effective timezone; only ask if truly ambiguous.
+- Never tell the user about API errors, offsets, or retries — just return the schedule.

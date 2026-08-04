@@ -4,6 +4,7 @@ import {
   serializeEvent,
   toEventDateTime,
 } from "../lib/google-calendar";
+import { getEffectiveTimeZone } from "../lib/preferences";
 import { defineTool } from "eve/tools";
 import type { calendar_v3 } from "googleapis";
 import { z } from "zod";
@@ -45,7 +46,9 @@ export default defineTool({
     timeZone: z
       .string()
       .optional()
-      .describe("IANA timezone when updating timed start/end."),
+      .describe(
+        "IANA timezone when updating timed start/end. Omit to use the user's effective timezone.",
+      ),
     attendees: z
       .array(z.string().email())
       .optional()
@@ -87,12 +90,24 @@ export default defineTool({
     const { calendar: alias, calendarId } = resolveCalendar(calendar);
     const client = getCalendarClient();
 
+    const touchingTime = start !== undefined || end !== undefined;
+    const allDay =
+      start !== undefined &&
+      end !== undefined &&
+      /^\d{4}-\d{2}-\d{2}$/.test(start) &&
+      /^\d{4}-\d{2}-\d{2}$/.test(end);
+    const zone = touchingTime
+      ? allDay
+        ? timeZone
+        : timeZone?.trim() || (await getEffectiveTimeZone())
+      : timeZone;
+
     const requestBody: calendar_v3.Schema$Event = {};
     if (summary !== undefined) requestBody.summary = summary;
     if (description !== undefined) requestBody.description = description;
     if (location !== undefined) requestBody.location = location;
-    if (start !== undefined) requestBody.start = toEventDateTime(start, timeZone);
-    if (end !== undefined) requestBody.end = toEventDateTime(end, timeZone);
+    if (start !== undefined) requestBody.start = toEventDateTime(start, zone);
+    if (end !== undefined) requestBody.end = toEventDateTime(end, zone);
     if (attendees !== undefined) {
       requestBody.attendees = attendees.map((email) => ({ email }));
     }

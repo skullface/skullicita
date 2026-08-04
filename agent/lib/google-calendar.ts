@@ -184,3 +184,76 @@ export function toEventDateTime(
   }
   return timeZone ? { dateTime: value, timeZone } : { dateTime: value };
 }
+
+/** Offset of `timeZone` at `instant`, as milliseconds to add to UTC to get local wall time. */
+function getTimeZoneOffsetMs(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value;
+  const asUtc = Date.UTC(
+    Number(get("year")),
+    Number(get("month")) - 1,
+    Number(get("day")),
+    Number(get("hour")),
+    Number(get("minute")),
+    Number(get("second")),
+  );
+  return asUtc - instant.getTime();
+}
+
+/**
+ * Google Calendar `timeMin`/`timeMax` require RFC3339 with `Z` or an offset.
+ * Bare dates / datetimes are interpreted in `timeZone` (caller's effective zone).
+ */
+export function toListTimeBound(value: string, timeZone: string): string {
+  const v = value.trim();
+  if (!v) {
+    throw new Error("time bound must be a non-empty ISO-8601 / RFC3339 string");
+  }
+
+  // Already RFC3339 with timezone.
+  if (/[zZ]$/.test(v) || /[+-]\d{2}:?\d{2}$/.test(v)) {
+    return v;
+  }
+
+  let local: string;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    local = `${v}T00:00:00`;
+  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) {
+    local = `${v}:00`;
+  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(v)) {
+    local = v.replace(/\.\d+$/, "");
+  } else {
+    const parsed = new Date(v);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(
+        `Invalid time bound "${value}". Use RFC3339 with offset/Z, or YYYY-MM-DD.`,
+      );
+    }
+    return parsed.toISOString();
+  }
+
+  const [datePart, timePart] = local.split("T");
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hour, minute, second] = timePart.split(":").map(Number);
+  const wallAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+
+  // Refine once so DST around the target local time is correct.
+  let utcMs = wallAsUtc;
+  for (let i = 0; i < 2; i++) {
+    const offsetMs = getTimeZoneOffsetMs(new Date(utcMs), timeZone);
+    utcMs = wallAsUtc - offsetMs;
+  }
+
+  return new Date(utcMs).toISOString();
+}
