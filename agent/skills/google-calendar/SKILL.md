@@ -26,7 +26,11 @@ Calendars are addressed by opaque aliases from config — never by email or raw 
 
 ## Reply format (listing events)
 
-When showing a schedule, reply with **one chronological list** — never group or label by calendar alias.
+**This format overrides the usual chat voice.** For schedule listings, do not be conversational — emit only the list below. No headers, no week ranges, no per-calendar sections, no asides, no "already happened", no wrap-up sentences.
+
+Merge every alias into **one chronological list**. Calendar aliases are for tools only; never print them in the reply. Do not say `alias · nothing` for empty calendars; skip empties entirely.
+
+Remember to use lowercase.
 
 ### Deduping
 
@@ -34,7 +38,7 @@ If an event titled exactly `🏠 Personal Commitment` (emoji included) has the *
 
 ### Line shape
 
-One event per line, nothing else (no bullets, no headers, no calendar names, no commentary unless the user asked a question beyond the list):
+One event per line. Exactly this shape, nothing else on the line:
 
 ```
 mon 10 aug: writing club, 12–1:30pm
@@ -51,6 +55,24 @@ Rules:
 - all-day events: omit the time (`mon 10 aug: writing club`)
 - sort by start time ascending across all calendars
 - if nothing is on: one short line like `nothing scheduled next week`
+
+### Wrong vs right
+
+Wrong (never do this):
+
+```
+Today (Mon Aug 3):
+
+Mon Aug 3 · Writing Club · 12:00–1:30 PM (alias) — already happened
+
+Enjoy your quiet afternoon after Writing Club!
+```
+
+Right:
+
+```
+mon 3 aug: writing club, 12–1:30pm
+```
 
 ## Time
 
