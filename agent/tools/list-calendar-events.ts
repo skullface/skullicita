@@ -1,7 +1,6 @@
 import {
-  getCalendarClient,
+  listCalendarEventsInRange,
   resolveCalendar,
-  serializeEvent,
   toListTimeBound,
 } from "../lib/google-calendar";
 import { getEffectiveTimeZone } from "../lib/preferences";
@@ -10,7 +9,7 @@ import { z } from "zod";
 
 export default defineTool({
   description:
-    "List Google Calendar events in a time range. Pass a configured calendar alias, or omit to use the default. timeMin/timeMax may be YYYY-MM-DD or ISO without offset — they are interpreted in the user's effective timezone (travel override or home).",
+    "List Google Calendar events in a time range. Pass a configured calendar alias, or omit to use the default. timeMin/timeMax may be YYYY-MM-DD or ISO without offset — they are interpreted in the user's effective timezone (travel override or home). Free/busy-only calendars return blocks titled \"busy\" with start/end times.",
   inputSchema: z.object({
     calendar: z
       .string()
@@ -77,20 +76,16 @@ export default defineTool({
   async execute({ calendar, timeMin, timeMax, timeZone, query, maxResults }) {
     const { calendar: alias, calendarId } = resolveCalendar(calendar);
     const zone = timeZone?.trim() || (await getEffectiveTimeZone());
-    const client = getCalendarClient();
-    const res = await client.events.list({
+    const events = await listCalendarEventsInRange({
       calendarId,
-      timeMin: timeMin ? toListTimeBound(timeMin, zone) : new Date().toISOString(),
+      timeMin: timeMin
+        ? toListTimeBound(timeMin, zone)
+        : new Date().toISOString(),
       timeMax: timeMax ? toListTimeBound(timeMax, zone) : undefined,
-      q: query,
+      timeZone: zone,
+      query,
       maxResults: maxResults ?? 20,
-      singleEvents: true,
-      orderBy: "startTime",
     });
-
-    const events = (res.data.items ?? [])
-      .map(serializeEvent)
-      .filter((event): event is NonNullable<typeof event> => event != null);
 
     return { calendar: alias, timeZone: zone, count: events.length, events };
   },

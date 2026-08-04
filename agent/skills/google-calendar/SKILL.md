@@ -9,7 +9,7 @@ Calendars are addressed by opaque aliases from config — never by email or raw 
 ## Tools
 
 - `list-calendars` — discover configured aliases (and the default). Call this when unsure which calendar the user means.
-- `list-calendar-events` — view upcoming or ranged events. Set `timeMin`/`timeMax` for a window; use `query` for text search.
+- `list-calendar-events` — view upcoming or ranged events. Set `timeMin`/`timeMax` for a window; use `query` for text search. Free/busy-only calendars return blocks with summary `busy` and real start/end times — include them in listings.
 - `create-calendar-event` — add an event. Timed events need ISO-8601 start/end (include offset or pass `timeZone`). All-day events use `YYYY-MM-DD` for both (end is exclusive).
 - `update-calendar-event` — change fields on an existing event by `eventId`. Only send fields that should change.
 - `delete-calendar-event` — remove an event by `eventId`.
@@ -34,7 +34,7 @@ Remember to use lowercase.
 
 ### Deduping
 
-If an event titled exactly `🏠 Personal Commitment` (emoji included) has the **same start and end** as another event (any calendar), drop the personal commitment and keep the other named event. Only drop it when the match is exact (same date, start, and duration/end). Keep a lone personal commitment if nothing else shares that slot.
+If an event titled exactly `🏠 Personal Commitment` (emoji included) or exactly `busy` has the **same start and end** as another named event (any calendar), drop the placeholder and keep the named event. Only drop when the match is exact (same date, start, and duration/end). Keep a lone personal commitment or busy block if nothing else shares that slot.
 
 ### Line shape
 
@@ -50,6 +50,7 @@ Rules:
 - day of month: no leading zero (`10`, not `010`)
 - month: 3-letter lowercase (`aug`, `sep`, …)
 - event title: downcased; strip surrounding quotes
+- free/busy blocks: title is `busy` (e.g. `tue 5 aug: busy, 2–3pm`) — treat like any other event; do not skip or explain them
 - timed events: `start–end` with an **en-dash** (`–`), not a hyphen
 - times: lowercase `am`/`pm`; drop `:00` minutes (`12–1:30pm`, `5–6pm`); put `am`/`pm` only on the end when both sides share the same meridiem; if they cross (`11:30am–1pm`), keep both
 - all-day events: omit the time (`mon 10 aug: writing club`)

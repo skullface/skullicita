@@ -2,10 +2,10 @@ import { defineSchedule } from "eve/schedules";
 
 import photon, { photonCredentials } from "../channels/photon";
 import {
-  getCalendarClient,
+  BUSY_SUMMARY,
   listCalendarAliases,
+  listCalendarEventsInRange,
   resolveCalendar,
-  serializeEvent,
   toListTimeBound,
   type CalendarEvent,
 } from "../lib/google-calendar";
@@ -78,16 +78,19 @@ function slotKey(event: CalendarEvent): string {
   return `${event.start ?? ""}|${event.end ?? ""}`;
 }
 
-/** Drop `🏠 Personal Commitment` when another event shares the exact same start/end. */
-function dedupePersonalCommitments(events: CalendarEvent[]): CalendarEvent[] {
+/**
+ * Drop placeholder / free-busy mirrors when another named event shares the
+ * exact same start/end (`🏠 Personal Commitment` or `busy`).
+ */
+function dedupePlaceholderEvents(events: CalendarEvent[]): CalendarEvent[] {
+  const isPlaceholder = (summary: string | null) =>
+    summary === PERSONAL_COMMITMENT || summary === BUSY_SUMMARY;
+
   const occupied = new Set(
-    events
-      .filter((event) => event.summary !== PERSONAL_COMMITMENT)
-      .map(slotKey),
+    events.filter((event) => !isPlaceholder(event.summary)).map(slotKey),
   );
   return events.filter(
-    (event) =>
-      event.summary !== PERSONAL_COMMITMENT || !occupied.has(slotKey(event)),
+    (event) => !isPlaceholder(event.summary) || !occupied.has(slotKey(event)),
   );
 }
 
@@ -97,26 +100,21 @@ async function listTodaysMatchingEvents(): Promise<CalendarEvent[]> {
   const tomorrow = nextCalendarYmd(today);
   const timeMin = toListTimeBound(today, timeZone);
   const timeMax = toListTimeBound(tomorrow, timeZone);
-  const client = getCalendarClient();
 
   const perCalendar = await Promise.all(
     listCalendarAliases().map(async (alias) => {
       const { calendarId } = resolveCalendar(alias);
-      const res = await client.events.list({
+      return listCalendarEventsInRange({
         calendarId,
         timeMin,
         timeMax,
+        timeZone,
         maxResults: 50,
-        singleEvents: true,
-        orderBy: "startTime",
       });
-      return (res.data.items ?? [])
-        .map(serializeEvent)
-        .filter((event): event is CalendarEvent => event != null);
     }),
   );
 
-  return dedupePersonalCommitments(perCalendar.flat());
+  return dedupePlaceholderEvents(perCalendar.flat());
 }
 
 export default defineSchedule({

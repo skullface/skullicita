@@ -145,16 +145,30 @@ function eventTime(value?: calendar_v3.Schema$EventDateTime | null): {
   return { instant: null, allDay: false };
 }
 
+/** Label used when a calendar only exposes free/busy (no event title). */
+export const BUSY_SUMMARY = "busy";
+
+function normalizeSummary(summary?: string | null): string {
+  const trimmed = summary?.trim() ?? "";
+  if (!trimmed || trimmed.toLowerCase() === BUSY_SUMMARY) return BUSY_SUMMARY;
+  return trimmed;
+}
+
 export function serializeEvent(
   event: calendar_v3.Schema$Event,
 ): CalendarEvent | null {
   if (!event.id) return null;
+  if (event.status === "cancelled") return null;
+  // Free/"available" blocks with no title are not busy time.
+  if (event.transparency === "transparent" && !event.summary?.trim()) {
+    return null;
+  }
   const start = eventTime(event.start);
   const end = eventTime(event.end);
   return {
     id: event.id,
     status: event.status ?? null,
-    summary: event.summary ?? null,
+    summary: normalizeSummary(event.summary),
     description: event.description ?? null,
     location: event.location ?? null,
     htmlLink: event.htmlLink ?? null,
@@ -172,6 +186,125 @@ export function serializeEvent(
       })),
     recurringEventId: event.recurringEventId ?? null,
   };
+}
+
+function isCalendarAccessError(err: unknown): boolean {
+  const e = err as { code?: number | string; response?: { status?: number } };
+  const status = Number(e.code ?? e.response?.status ?? 0);
+  return status === 403 || status === 404;
+}
+
+function busyPeriodToEvent(
+  period: { start?: string | null; end?: string | null },
+  index: number,
+): CalendarEvent | null {
+  const start = period.start?.trim() ?? "";
+  const end = period.end?.trim() ?? "";
+  if (!start || !end) return null;
+  const allDay = /^\d{4}-\d{2}-\d{2}$/.test(start);
+  return {
+    id: `busy-${index}-${start}-${end}`,
+    status: "confirmed",
+    summary: BUSY_SUMMARY,
+    description: null,
+    location: null,
+    htmlLink: null,
+    start,
+    end,
+    allDay,
+    attendees: [],
+    recurringEventId: null,
+  };
+}
+
+async function listBusyBlocks(params: {
+  calendarId: string;
+  timeMin: string;
+  timeMax: string;
+  timeZone: string;
+  maxResults: number;
+}): Promise<CalendarEvent[]> {
+  const client = getCalendarClient();
+  const res = await client.freebusy.query({
+    requestBody: {
+      timeMin: params.timeMin,
+      timeMax: params.timeMax,
+      timeZone: params.timeZone,
+      items: [{ id: params.calendarId }],
+    },
+  });
+
+  const calendars = res.data.calendars ?? {};
+  const entry =
+    calendars[params.calendarId] ?? Object.values(calendars)[0] ?? null;
+  const busy = entry?.busy ?? [];
+  return busy
+    .map((period, index) => busyPeriodToEvent(period, index))
+    .filter((event): event is CalendarEvent => event != null)
+    .slice(0, params.maxResults);
+}
+
+export type ListCalendarEventsParams = {
+  calendarId: string;
+  timeMin: string;
+  /** Required for free/busy fallback when the calendar only exposes busy blocks. */
+  timeMax?: string;
+  timeZone: string;
+  query?: string;
+  maxResults?: number;
+};
+
+/**
+ * List events for a calendar. Untitled / private free-busy entries become
+ * `busy`. If `events.list` is empty or forbidden (freeBusyReader calendars),
+ * falls back to the FreeBusy API so busy blocks still appear with times.
+ */
+export async function listCalendarEventsInRange(
+  params: ListCalendarEventsParams,
+): Promise<CalendarEvent[]> {
+  const maxResults = params.maxResults ?? 20;
+  const client = getCalendarClient();
+
+  let events: CalendarEvent[] = [];
+  let listFailed = false;
+
+  try {
+    const res = await client.events.list({
+      calendarId: params.calendarId,
+      timeMin: params.timeMin,
+      timeMax: params.timeMax,
+      q: params.query,
+      maxResults,
+      singleEvents: true,
+      orderBy: "startTime",
+    });
+    events = (res.data.items ?? [])
+      .map(serializeEvent)
+      .filter((event): event is CalendarEvent => event != null);
+  } catch (err) {
+    if (!isCalendarAccessError(err) || params.query) throw err;
+    listFailed = true;
+  }
+
+  // Free/busy-only calendars often return nothing (or 403) from events.list.
+  // FreeBusy has no text search — skip when the caller passed `query`.
+  if ((listFailed || events.length === 0) && !params.query) {
+    const timeMax =
+      params.timeMax ??
+      new Date(
+        new Date(params.timeMin).getTime() + 7 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+    const busy = await listBusyBlocks({
+      calendarId: params.calendarId,
+      timeMin: params.timeMin,
+      timeMax,
+      timeZone: params.timeZone,
+      maxResults,
+    });
+    if (busy.length > 0) return busy;
+  }
+
+  return events;
 }
 
 export function toEventDateTime(
