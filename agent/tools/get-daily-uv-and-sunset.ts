@@ -31,9 +31,9 @@ function formatSunset(isoLocal: string): string {
   const hour = Number(hourRaw);
   if (!Number.isFinite(hour)) return isoLocal;
   const minute = minuteRaw.slice(0, 2);
-  const period = hour >= 12 ? "PM" : "AM";
+  const period = hour >= 12 ? "pm" : "am";
   const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-  return `${hour12}:${minute} ${period}`;
+  return `${hour12}:${minute}${period}`;
 }
 
 function isUsZip(location: string): boolean {
@@ -94,6 +94,7 @@ export default defineTool({
       ),
   }),
   outputSchema: z.object({
+    placeName: z.string(),
     location: z.string(),
     date: z.string(),
     timezone: z.string(),
@@ -121,11 +122,13 @@ export default defineTool({
       daily: ForecastDaily;
     };
 
+    const date = data.daily.time[0];
     const sunsetIso = data.daily.sunset[0] ?? null;
 
     return {
+      placeName: place.name,
       location: formatPlace(place),
-      date: data.daily.time[0],
+      date,
       timezone: data.timezone,
       uvIndexMax: data.daily.uv_index_max[0] ?? null,
       sunset: sunsetIso,
