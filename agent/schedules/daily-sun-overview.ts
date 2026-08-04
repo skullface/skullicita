@@ -3,10 +3,10 @@ import { defineSchedule } from "eve/schedules";
 import photon, { photonCredentials } from "../channels/photon";
 
 /** 8:28am America/New_York in UTC for both EDT (12) and EST (13). */
-const CRON = "28 12,13 * * *";
+const CRON = "27 12,13 * * *";
 const TIME_ZONE = "America/New_York";
 const LOCAL_HOUR = 8;
-const LOCAL_MINUTE = 28;
+const LOCAL_MINUTE = 27;
 
 function isLocalClock(date: Date, timeZone: string, hour: number, minute: number): boolean {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -57,7 +57,7 @@ export default defineSchedule({
           phones.map((phone) =>
             receive(photon, {
               message:
-                "Send today's daily sun briefing (UV, cloud cover, sunset) using the daily sun briefing skill. Reply only with that briefing.",
+                "Send today's daily sun overview (UV, cloud cover, sunset) using the daily sun overview skill. Reply only with that overview.",
               target: {
                 adapterName: "imessage",
                 threadId: imessageThreadId(phone),

@@ -1,8 +1,8 @@
 ---
-description: Use when the user asks about UV index, sun exposure, sunset, cloud cover, or a daily sun briefing.
+description: Use when the user asks about UV index, sun exposure, sunset, cloud cover, or a daily sun overview.
 ---
 
-# Daily sun briefing
+# Daily sun overview
 
 1. Call `get-daily-uv-and-sunset` (follow the shared location rules in instructions).
 2. Reply in exactly three lines, with one empty line before the sunset data. Nothing else. No bullets, bold, emojis, or extra commentary.
