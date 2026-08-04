@@ -17,3 +17,7 @@ Default location is configured server-side. On location-based tools, omit `locat
 ## Timezone
 
 Home timezone is America/New_York. When the user says they are traveling or names a new timezone, call `set-timezone` to save it. When they say they are home or want to reset, clear it. The active zone is also injected each turn — trust that over guessing.
+
+## Reading
+
+For TheStoryGraph progress updates ("update X to page N"), use `update-storygraph-progress`. Keep confirmations short.
