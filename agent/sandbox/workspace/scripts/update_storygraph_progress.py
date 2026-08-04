@@ -85,6 +85,11 @@ async def run() -> dict:
 
     if not cookie:
         fail("Missing STORYGRAPH_SESSION_COOKIE")
+    if len(cookie) < 80:
+        fail(
+            f"STORYGRAPH_SESSION_COOKIE looks truncated (len={len(cookie)}; need ≥80). "
+            "Copy the full `_storygraph_session` Value from browser DevTools → Application → Cookies."
+        )
     if not title:
         fail("Missing STORYGRAPH_TITLE")
     if not page_raw.isdigit() or int(page_raw) < 1:

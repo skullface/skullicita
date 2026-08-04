@@ -7,6 +7,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from storygraph.exceptions import AuthenticationError, ParseError
+from storygraph.http import _IMPERSONATE_CANDIDATES, _is_cloudflare_challenge
 
 
 class AuthManager:
@@ -41,9 +42,7 @@ class AuthManager:
             ParseError: If unable to parse homepage
         """
         try:
-            # Fetch homepage to get CSRF token
-            response = await self.client.get(self.base_url)
-            response.raise_for_status()
+            response = await self._get_homepage_bypassing_cloudflare()
 
             soup = BeautifulSoup(response.text, "html.parser")
 
@@ -69,6 +68,41 @@ class AuthManager:
             if isinstance(e, (AuthenticationError, ParseError)):
                 raise
             raise AuthenticationError(f"Unexpected error during cookie initialization: {e}") from e
+
+    async def _get_homepage_bypassing_cloudflare(self) -> Any:
+        """GET homepage, rotating curl_cffi impersonate profiles on CF 403s."""
+        recreate = getattr(self.client, "recreate_with_impersonate", None)
+        candidates = _IMPERSONATE_CANDIDATES
+        if recreate is None:
+            candidates = (getattr(self.client, "_impersonate", None) or "chrome131",)
+
+        for impersonate in candidates:
+            if recreate is not None:
+                recreate(impersonate)
+            response = await self.client.get(self.base_url)
+            if _is_cloudflare_challenge(response):
+                continue
+            if response.status_code == 403:
+                raise AuthenticationError(
+                    "StoryGraph returned HTTP 403 (not a Cloudflare challenge page). "
+                    "Session cookie is likely invalid or expired — refresh "
+                    "`_storygraph_session` from the browser."
+                )
+            try:
+                response.raise_for_status()
+            except Exception as e:
+                # curl_cffi raises requests HTTPError, not httpx.HTTPError
+                raise AuthenticationError(
+                    f"HTTP error during cookie initialization: {e}"
+                ) from e
+            return response
+
+        raise AuthenticationError(
+            "Cloudflare challenged every browser impersonation profile (HTTP 403 "
+            "'Just a moment...'). This usually means the request IP is blocked; "
+            "retry later or run from a residential network. Also confirm "
+            "STORYGRAPH_SESSION_COOKIE is the full `_storygraph_session` value."
+        )
 
     async def login(self, email: str, password: str) -> bool:
         """

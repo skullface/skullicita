@@ -12,6 +12,28 @@ from typing import Any
 import httpx
 from curl_cffi import requests as curl_requests
 
+# Generic "chrome" tracks latest and currently gets CF-challenged from some
+# networks. Prefer pinned profiles that still clear StoryGraph's passive check.
+_IMPERSONATE_CANDIDATES = (
+    "chrome131",
+    "chrome124",
+    "chrome136",
+    "safari184",
+    "chrome146",
+)
+
+
+def _is_cloudflare_challenge(response: Any) -> bool:
+    if getattr(response, "status_code", None) != 403:
+        return False
+    text = getattr(response, "text", "") or ""
+    return (
+        "Just a moment" in text
+        or "challenge-platform" in text
+        or "cf-browser-verification" in text
+        or "cf-mitigated" in (getattr(response, "headers", {}) or {})
+    )
+
 
 class AsyncCloudScraper:
     """
@@ -26,15 +48,28 @@ class AsyncCloudScraper:
         timeout: float = 30.0,
         follow_redirects: bool = True,
         cookies: dict[str, str] | None = None,
+        impersonate: str = _IMPERSONATE_CANDIDATES[0],
     ):
-        # Pin a concrete Chrome JA3/profile. Generic "chrome" tracks latest and
-        # currently gets Cloudflare-challenged (HTTP 403 "Just a moment...").
-        self._session = curl_requests.Session(impersonate="chrome131")
+        self._impersonate = impersonate
+        self._session = curl_requests.Session(impersonate=impersonate)
         self._timeout = timeout
         self._follow_redirects = follow_redirects
+        self._cookies = dict(cookies or {})
 
-        if cookies:
-            self._session.cookies.update(cookies)
+        if self._cookies:
+            self._session.cookies.update(self._cookies)
+
+    def recreate_with_impersonate(self, impersonate: str) -> None:
+        """Rebuild the underlying session with a different browser profile."""
+        if impersonate == self._impersonate:
+            return
+        close = getattr(self._session, "close", None)
+        if callable(close):
+            close()
+        self._impersonate = impersonate
+        self._session = curl_requests.Session(impersonate=impersonate)
+        if self._cookies:
+            self._session.cookies.update(self._cookies)
 
     async def get(self, url: str, **kwargs: Any) -> Any:
         kwargs.setdefault("allow_redirects", self._follow_redirects)

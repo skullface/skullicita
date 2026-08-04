@@ -21,6 +21,9 @@ export type StorygraphProgressResult = {
   };
 };
 
+/** Rails session cookies are long encrypted blobs; short values are always mis-copied. */
+const MIN_SESSION_COOKIE_LEN = 80;
+
 function requireSessionCookie(): string {
   const raw = process.env.STORYGRAPH_SESSION_COOKIE?.trim();
   if (!raw) {
@@ -28,7 +31,16 @@ function requireSessionCookie(): string {
       "Missing STORYGRAPH_SESSION_COOKIE. Set it to the value of the `_storygraph_session` browser cookie.",
     );
   }
-  return raw.replace(/^_storygraph_session=/i, "").trim();
+  const cookie = raw.replace(/^_storygraph_session=/i, "").trim();
+  if (cookie.length < MIN_SESSION_COOKIE_LEN) {
+    throw new Error(
+      `STORYGRAPH_SESSION_COOKIE looks truncated (len=${cookie.length}; need ≥${MIN_SESSION_COOKIE_LEN}). ` +
+        "In the browser on app.thestorygraph.com → DevTools → Application → Cookies → " +
+        "copy the full `_storygraph_session` Value (usually hundreds of characters), then " +
+        "`vercel env add STORYGRAPH_SESSION_COOKIE` for Production/Preview and redeploy.",
+    );
+  }
+  return cookie;
 }
 
 function scriptPath(): string {
