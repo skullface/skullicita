@@ -1,5 +1,5 @@
 ---
-description: Use when the user asks about UV index, sun exposure, sunset, or a daily sun briefing.
+description: Use when the user asks about UV index, sun exposure, sunset, cloud cover, or a daily sun briefing.
 ---
 
 # Daily sun briefing
@@ -9,10 +9,13 @@ description: Use when the user asks about UV index, sun exposure, sunset, or a d
 
 UV bands: 0–2 low, 3–5 moderate, 6–7 high, 8–10 very high, 11+ extreme.
 
+Use `cloudCoverMean` and the tool's `cloudCoverVsNormal` phrase as-is (already compared to a 10-year monthly average).
+
 Example shape:
 
 ```
 UV index is high, peaking at 7.3
+cloud coverage 12% (much sunnier than normal)
 sunset is at 8:41pm in lakewood
 ```
 
