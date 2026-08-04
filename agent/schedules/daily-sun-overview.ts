@@ -52,6 +52,8 @@ export default defineSchedule({
 
     waitUntil(
       (async () => {
+        console.log("[daily-sun-overview] morning sun overview schedule ran; sending overview");
+
         const phones = await listPhotonUserPhones();
         await Promise.all(
           phones.map((phone) =>
