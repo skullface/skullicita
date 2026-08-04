@@ -2,7 +2,7 @@ import { defineSchedule } from "eve/schedules";
 
 import photon, { photonCredentials } from "../channels/photon";
 import {
-  BUSY_SUMMARY,
+  formatScheduleListing,
   listCalendarAliases,
   listCalendarEventsInRange,
   resolveCalendar,
@@ -16,8 +16,6 @@ const CRON = "27 12,13 * * *";
 const TIME_ZONE = "America/New_York";
 const LOCAL_HOUR = 8;
 const LOCAL_MINUTE = 27;
-
-const PERSONAL_COMMITMENT = "🏠 Personal Commitment";
 
 function isLocalClock(date: Date, timeZone: string, hour: number, minute: number): boolean {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -74,27 +72,11 @@ function nextCalendarYmd(ymd: string): string {
   return next.toISOString().slice(0, 10);
 }
 
-function slotKey(event: CalendarEvent): string {
-  return `${event.start ?? ""}|${event.end ?? ""}`;
-}
-
-/**
- * Drop placeholder / free-busy mirrors when another named event shares the
- * exact same start/end (`🏠 Personal Commitment` or `busy`).
- */
-function dedupePlaceholderEvents(events: CalendarEvent[]): CalendarEvent[] {
-  const isPlaceholder = (summary: string | null) =>
-    summary === PERSONAL_COMMITMENT || summary === BUSY_SUMMARY;
-
-  const occupied = new Set(
-    events.filter((event) => !isPlaceholder(event.summary)).map(slotKey),
-  );
-  return events.filter(
-    (event) => !isPlaceholder(event.summary) || !occupied.has(slotKey(event)),
-  );
-}
-
-async function listTodaysMatchingEvents(): Promise<CalendarEvent[]> {
+async function listTodaysMatchingEvents(): Promise<{
+  events: CalendarEvent[];
+  timeZone: string;
+  listing: string;
+}> {
   const timeZone = await getEffectiveTimeZone();
   const today = localYmd(new Date(), timeZone);
   const tomorrow = nextCalendarYmd(today);
@@ -114,7 +96,9 @@ async function listTodaysMatchingEvents(): Promise<CalendarEvent[]> {
     }),
   );
 
-  return dedupePlaceholderEvents(perCalendar.flat());
+  const events = perCalendar.flat();
+  const listing = formatScheduleListing(events, timeZone, "nothing scheduled");
+  return { events, timeZone, listing };
 }
 
 export default defineSchedule({
@@ -124,24 +108,24 @@ export default defineSchedule({
 
     waitUntil(
       (async () => {
-        const events = await listTodaysMatchingEvents();
-        if (events.length === 0) {
+        const { listing } = await listTodaysMatchingEvents();
+        if (listing === "nothing scheduled") {
           console.log(
             "[daily-calendar-schedule] no matching events today, skipping message",
           );
           return;
         }
 
+        const eventCount = listing.split("\n").length;
         console.log(
-          `[daily-calendar-schedule] morning job completed; ${events.length} matching event(s), sending list`,
+          `[daily-calendar-schedule] morning job completed; ${eventCount} matching event(s), sending list`,
         );
 
         const phones = await listPhotonUserPhones();
         await Promise.all(
           phones.map((phone) =>
             receive(photon, {
-              message:
-                "List today's events across all calendars using the google calendar skill (list-calendars, then list-calendar-events for today on every alias; merge, dedupe, and format per that skill). Reply with only the chronological list in the skill's line format, nothing else.",
+              message: `Reply with exactly this text and nothing else:\n\n${listing}`,
               target: {
                 adapterName: "imessage",
                 threadId: imessageThreadId(phone),

@@ -1,4 +1,5 @@
 import {
+  formatEventLine,
   listCalendarEventsInRange,
   resolveCalendar,
   toListTimeBound,
@@ -9,7 +10,7 @@ import { z } from "zod";
 
 export default defineTool({
   description:
-    "List Google Calendar events in a time range. Pass a configured calendar alias, or omit to use the default. timeMin/timeMax may be YYYY-MM-DD or ISO without offset — they are interpreted in the user's effective timezone (travel override or home). Free/busy-only calendars return blocks titled \"busy\" with start/end times.",
+    "List Google Calendar events on one calendar alias. For full-schedule listings across all calendars, prefer list-schedule instead. timeMin/timeMax may be YYYY-MM-DD or ISO without offset — they are interpreted in the user's effective timezone. Free/busy-only calendars return blocks titled \"busy\" with start/end times.",
   inputSchema: z.object({
     calendar: z
       .string()
@@ -62,6 +63,11 @@ export default defineTool({
         start: z.string().nullable(),
         end: z.string().nullable(),
         allDay: z.boolean(),
+        line: z
+          .string()
+          .describe(
+            "Preformatted schedule line. Prefer list-schedule for multi-calendar replies.",
+          ),
         attendees: z.array(
           z.object({
             email: z.string(),
@@ -87,6 +93,14 @@ export default defineTool({
       maxResults: maxResults ?? 20,
     });
 
-    return { calendar: alias, timeZone: zone, count: events.length, events };
+    return {
+      calendar: alias,
+      timeZone: zone,
+      count: events.length,
+      events: events.map((event) => ({
+        ...event,
+        line: formatEventLine(event, zone) ?? "",
+      })),
+    };
   },
 });

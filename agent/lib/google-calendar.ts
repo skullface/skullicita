@@ -148,10 +148,359 @@ function eventTime(value?: calendar_v3.Schema$EventDateTime | null): {
 /** Label used when a calendar only exposes free/busy (no event title). */
 export const BUSY_SUMMARY = "busy";
 
+/** Placeholder mirrored across calendars; dropped when a named event shares the slot. */
+export const PERSONAL_COMMITMENT_SUMMARY = "🏠 Personal Commitment";
+
+const EN_DASH = "\u2013";
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+const MONTHS = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+] as const;
+
 function normalizeSummary(summary?: string | null): string {
   const trimmed = summary?.trim() ?? "";
   if (!trimmed || trimmed.toLowerCase() === BUSY_SUMMARY) return BUSY_SUMMARY;
   return trimmed;
+}
+
+function isPersonalCommitmentSummary(summary: string | null): boolean {
+  if (!summary) return false;
+  if (summary === PERSONAL_COMMITMENT_SUMMARY) return true;
+  const normalized = summary
+    .trim()
+    .toLowerCase()
+    .replace(/^🏠\s*/u, "")
+    .trim();
+  return normalized === "personal commitment";
+}
+
+function isBusySummary(summary: string | null): boolean {
+  return (summary ?? "").trim().toLowerCase() === BUSY_SUMMARY;
+}
+
+function isPlaceholderSummary(summary: string | null): boolean {
+  return isPersonalCommitmentSummary(summary) || isBusySummary(summary);
+}
+
+/** Instant range key so offset vs Z forms of the same slot still match. */
+function slotKey(event: CalendarEvent): string {
+  if (event.allDay) return `day:${event.start ?? ""}|${event.end ?? ""}`;
+  const startMs = event.start ? Date.parse(event.start) : Number.NaN;
+  const endMs = event.end ? Date.parse(event.end) : Number.NaN;
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+    return `raw:${event.start ?? ""}|${event.end ?? ""}`;
+  }
+  return `t:${startMs}|${endMs}`;
+}
+
+/**
+ * Drop placeholder / free-busy mirrors when another named event shares the
+ * exact same start/end (`🏠 Personal Commitment` or `busy`).
+ */
+export function dedupePlaceholderEvents(
+  events: CalendarEvent[],
+): CalendarEvent[] {
+  const occupied = new Set(
+    events
+      .filter((event) => !isPlaceholderSummary(event.summary))
+      .map(slotKey),
+  );
+  return events.filter(
+    (event) =>
+      !isPlaceholderSummary(event.summary) || !occupied.has(slotKey(event)),
+  );
+}
+
+function ymdParts(
+  instant: string,
+  allDay: boolean,
+  timeZone: string,
+): { year: number; month: number; day: number } | null {
+  if (allDay && /^\d{4}-\d{2}-\d{2}$/.test(instant)) {
+    const [year, month, day] = instant.split("-").map(Number);
+    return { year, month, day };
+  }
+  const date = new Date(instant);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return { year: get("year"), month: get("month"), day: get("day") };
+}
+
+function formatDayPrefix(
+  instant: string,
+  allDay: boolean,
+  timeZone: string,
+): string | null {
+  const ymd = ymdParts(instant, allDay, timeZone);
+  if (!ymd) return null;
+  const weekday = WEEKDAYS[new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day, 12)).getUTCDay()];
+  return `${weekday} ${ymd.day} ${MONTHS[ymd.month - 1]}`;
+}
+
+function formatClockPart(
+  date: Date,
+  timeZone: string,
+): { hour12: number; minute: number; meridiem: "am" | "pm"; label: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+  const hour12 = Number(parts.find((part) => part.type === "hour")?.value);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+  const dayPeriod = (
+    parts.find((part) => part.type === "dayPeriod")?.value ?? "AM"
+  ).toLowerCase();
+  const meridiem: "am" | "pm" = dayPeriod.startsWith("p") ? "pm" : "am";
+  const label =
+    minute === 0
+      ? `${hour12}`
+      : `${hour12}:${String(minute).padStart(2, "0")}`;
+  return { hour12, minute, meridiem, label };
+}
+
+function formatTimeRange(
+  startInstant: string,
+  endInstant: string | null,
+  timeZone: string,
+): string | null {
+  const start = new Date(startInstant);
+  if (Number.isNaN(start.getTime())) return null;
+  const startClock = formatClockPart(start, timeZone);
+  if (!endInstant) return `${startClock.label}${startClock.meridiem}`;
+
+  const end = new Date(endInstant);
+  if (Number.isNaN(end.getTime())) {
+    return `${startClock.label}${startClock.meridiem}`;
+  }
+  const endClock = formatClockPart(end, timeZone);
+  if (startClock.meridiem === endClock.meridiem) {
+    return `${startClock.label}${EN_DASH}${endClock.label}${endClock.meridiem}`;
+  }
+  return `${startClock.label}${startClock.meridiem}${EN_DASH}${endClock.label}${endClock.meridiem}`;
+}
+
+function formatTitle(summary: string | null): string {
+  let title = (summary ?? "").trim();
+  if (
+    (title.startsWith('"') && title.endsWith('"')) ||
+    (title.startsWith("'") && title.endsWith("'"))
+  ) {
+    title = title.slice(1, -1).trim();
+  }
+  if (isPersonalCommitmentSummary(title)) {
+    return PERSONAL_COMMITMENT_SUMMARY.toLowerCase();
+  }
+  return title.toLowerCase() || BUSY_SUMMARY;
+}
+
+type ScheduleSegment = {
+  start: string | null;
+  end: string | null;
+  allDay: boolean;
+  title: string;
+  withOverlap: boolean;
+};
+
+function eventStartMs(event: { start: string | null; allDay: boolean }): number {
+  if (!event.start) return Number.POSITIVE_INFINITY;
+  if (event.allDay && /^\d{4}-\d{2}-\d{2}$/.test(event.start)) {
+    const [year, month, day] = event.start.split("-").map(Number);
+    return Date.UTC(year, month - 1, day);
+  }
+  const ms = Date.parse(event.start);
+  return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+}
+
+function eventEndMs(event: { end: string | null; start: string | null; allDay: boolean }): number {
+  if (!event.end) return eventStartMs(event);
+  if (event.allDay && /^\d{4}-\d{2}-\d{2}$/.test(event.end)) {
+    const [year, month, day] = event.end.split("-").map(Number);
+    return Date.UTC(year, month - 1, day);
+  }
+  const ms = Date.parse(event.end);
+  return Number.isNaN(ms) ? eventStartMs(event) : ms;
+}
+
+function timedIntervalsOverlap(
+  a: { start: string | null; end: string | null; allDay: boolean },
+  b: { start: string | null; end: string | null; allDay: boolean },
+): boolean {
+  if (a.allDay || b.allDay || !a.start || !b.start) return false;
+  const a0 = eventStartMs(a);
+  const a1 = eventEndMs(a);
+  const b0 = eventStartMs(b);
+  const b1 = eventEndMs(b);
+  return a0 < b1 && b0 < a1;
+}
+
+/**
+ * Collapse overlapping `busy` blocks into one span marked `withOverlap`.
+ * Named events stay intact.
+ */
+export function collapseOverlappingBusy(
+  events: CalendarEvent[],
+): ScheduleSegment[] {
+  const sorted = events
+    .slice()
+    .sort((a, b) => eventStartMs(a) - eventStartMs(b) || eventEndMs(a) - eventEndMs(b));
+
+  const segments: ScheduleSegment[] = [];
+  for (const event of sorted) {
+    const title = formatTitle(event.summary);
+    const next: ScheduleSegment = {
+      start: event.start,
+      end: event.end,
+      allDay: event.allDay,
+      title,
+      withOverlap: false,
+    };
+    const prev = segments[segments.length - 1];
+    if (
+      prev &&
+      prev.title === BUSY_SUMMARY &&
+      next.title === BUSY_SUMMARY &&
+      timedIntervalsOverlap(prev, next)
+    ) {
+      if (eventEndMs(next) > eventEndMs(prev)) {
+        prev.end = next.end;
+      }
+      prev.withOverlap = true;
+      continue;
+    }
+    segments.push(next);
+  }
+  return segments;
+}
+
+function formatSegmentBody(segment: ScheduleSegment, timeZone: string): string | null {
+  const overlap = segment.withOverlap ? " with overlap" : "";
+  if (segment.allDay || !segment.start) return `${segment.title}${overlap}`;
+  const times = formatTimeRange(segment.start, segment.end, timeZone);
+  if (!times) return `${segment.title}${overlap}`;
+  return `${segment.title} ${times}${overlap}`;
+}
+
+/** One skill-shaped day line, e.g. `mon 10 aug: writing club 12–1:30pm`. */
+export function formatEventLine(
+  event: CalendarEvent,
+  timeZone: string,
+): string | null {
+  if (!event.start) return null;
+  const day = formatDayPrefix(event.start, event.allDay, timeZone);
+  if (!day) return null;
+  const body = formatSegmentBody(
+    {
+      start: event.start,
+      end: event.end,
+      allDay: event.allDay,
+      title: formatTitle(event.summary),
+      withOverlap: false,
+    },
+    timeZone,
+  );
+  if (!body) return null;
+  return `${day}: ${body}`;
+}
+
+function formatDayLine(
+  day: string,
+  segments: ScheduleSegment[],
+  timeZone: string,
+): string | null {
+  const parts: Array<{ body: string; busy: boolean }> = [];
+  for (const segment of segments) {
+    const body = formatSegmentBody(segment, timeZone);
+    if (!body) continue;
+    parts.push({ body, busy: segment.title === BUSY_SUMMARY });
+  }
+  if (parts.length === 0) return null;
+
+  let joined = parts[0].body;
+  for (let i = 1; i < parts.length; i++) {
+    const joiner = parts[i - 1].busy && parts[i].busy ? ", " : " | ";
+    joined += `${joiner}${parts[i].body}`;
+  }
+  return `${day}: ${joined}`;
+}
+
+/**
+ * Merge-ready listing text for iMessage. Dedupes placeholders, sorts by start,
+ * collapses overlapping busy blocks, and emits one line per day.
+ */
+export function formatScheduleListing(
+  events: CalendarEvent[],
+  timeZone: string,
+  emptyMessage = "nothing scheduled",
+): string {
+  const segments = collapseOverlappingBusy(dedupePlaceholderEvents(events));
+  const byDay = new Map<string, ScheduleSegment[]>();
+  for (const segment of segments) {
+    if (!segment.start) continue;
+    const day = formatDayPrefix(segment.start, segment.allDay, timeZone);
+    if (!day) continue;
+    const list = byDay.get(day) ?? [];
+    list.push(segment);
+    byDay.set(day, list);
+  }
+
+  const lines = [...byDay.entries()]
+    .map(([day, daySegments]) => formatDayLine(day, daySegments, timeZone))
+    .filter((line): line is string => Boolean(line));
+
+  return lines.length === 0 ? emptyMessage : lines.join("\n");
+}
+
+/** List every configured calendar in a window, dedupe, and format. */
+export async function listFormattedSchedule(params: {
+  timeMin: string;
+  timeMax?: string;
+  timeZone: string;
+  query?: string;
+  maxResultsPerCalendar?: number;
+  emptyMessage?: string;
+}): Promise<{ text: string; count: number; events: CalendarEvent[] }> {
+  const maxResults = params.maxResultsPerCalendar ?? 50;
+  const perCalendar = await Promise.all(
+    listCalendarAliases().map(async (alias) => {
+      const { calendarId } = resolveCalendar(alias);
+      return listCalendarEventsInRange({
+        calendarId,
+        timeMin: params.timeMin,
+        timeMax: params.timeMax,
+        timeZone: params.timeZone,
+        query: params.query,
+        maxResults,
+      });
+    }),
+  );
+  const emptyMessage = params.emptyMessage ?? "nothing scheduled";
+  const events = dedupePlaceholderEvents(perCalendar.flat());
+  const text = formatScheduleListing(events, params.timeZone, emptyMessage);
+  return {
+    text,
+    count: text === emptyMessage ? 0 : events.length,
+    events,
+  };
 }
 
 export function serializeEvent(
