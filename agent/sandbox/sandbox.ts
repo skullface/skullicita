@@ -2,7 +2,7 @@ import { defineSandbox } from "eve/sandbox";
 
 export default defineSandbox({
   // Bump when requirements or vendored storygraph change so templates rebuild.
-  revalidationKey: () => "storygraph-venv-curl-cffi-v4",
+  revalidationKey: () => "storygraph-venv-curl-cffi-v5",
   async bootstrap({ use }) {
     const sandbox = await use();
     // Sandbox image is PEP 668 + missing ensurepip; install venv, then deps.

@@ -27,7 +27,9 @@ class AsyncCloudScraper:
         follow_redirects: bool = True,
         cookies: dict[str, str] | None = None,
     ):
-        self._session = curl_requests.Session(impersonate="chrome")
+        # Pin a concrete Chrome JA3/profile. Generic "chrome" tracks latest and
+        # currently gets Cloudflare-challenged (HTTP 403 "Just a moment...").
+        self._session = curl_requests.Session(impersonate="chrome131")
         self._timeout = timeout
         self._follow_redirects = follow_redirects
 
