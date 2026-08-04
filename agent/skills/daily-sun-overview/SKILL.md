@@ -4,7 +4,7 @@ description: Use when the user asks about UV index, sun exposure, sunset, cloud 
 
 # Daily sun overview
 
-1. Call `get-daily-uv-and-sunset` (follow the shared location rules in instructions).
+1. Call `get-daily-sun-forecast` (follow the shared location rules in instructions).
 2. Reply in exactly three lines, with one empty line before the sunset data. Nothing else. No bullets, bold, emojis, or extra commentary.
 
 UV bands: 0–2 low, 3–5 moderate, 6–7 high, 8–10 very high, 11+ extreme.

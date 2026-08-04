@@ -250,7 +250,7 @@ export default defineTool({
     sunset: z.string().nullable(),
     sunsetLocal: z.string().nullable(),
     sunsetCloudCover: z.number().nullable(),
-    sunsetCloudNote: z.enum(["clear at sunset", "cloudy at sunset"]).nullable(),
+    sunsetCloudNote: z.enum(["should be clear", "should be cloudy"]).nullable(),
   }),
   async execute({ location }, ctx) {
     const place = await geocode(resolveLocation(location), ctx.abortSignal);
