@@ -1,8 +1,8 @@
 import { defineSandbox } from "eve/sandbox";
 
 export default defineSandbox({
-  // Bump when requirements or vendored storygraph change so templates rebuild.
-  revalidationKey: () => "storygraph-venv-curl-cffi-v6",
+  // Bump when workspace requirements or scripts change so templates rebuild.
+  revalidationKey: () => "workspace-venv-curl-cffi-v7",
   async bootstrap({ use }) {
     const sandbox = await use();
     // Sandbox image is PEP 668 + missing ensurepip; install venv, then deps.
@@ -16,7 +16,7 @@ export default defineSandbox({
         'apt-get install -y -qq "python${PY_VER}-venv" python3-pip',
         'rm -rf /workspace/.venv',
         '"$PYTHON" -m venv /workspace/.venv',
-        "/workspace/.venv/bin/pip install -r /workspace/requirements-storygraph.txt",
+        "/workspace/.venv/bin/pip install -r /workspace/requirements-workspace.txt",
       ].join(" && "),
     });
   },

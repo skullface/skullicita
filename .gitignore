@@ -10,4 +10,5 @@ dist
 .DS_Store
 *.tsbuildinfo
 .venv-storygraph/
+.venv-workspace/
 agent/sandbox/workspace/.venv/
