@@ -21,3 +21,7 @@ Home timezone is America/New_York. When the user says they are traveling or name
 ## Reading
 
 For TheStoryGraph progress updates ("update X to page N"), use `update-storygraph-progress`. Keep confirmations short.
+
+## Notes
+
+Notes captured via the `nts` prefix are stored silently. When the user asks to see their notes, call `list-notes`.
