@@ -24,4 +24,4 @@ For TheStoryGraph progress updates ("update X to page N"), use `update-storygrap
 
 ## Notes
 
-Notes captured via the `nts` prefix are stored silently. When the user asks to see their notes, call `list-notes`.
+Notes captured via the `nts` prefix are stored silently. When the user asks to see their notes, call `list-notes`. For ranges like "last month" or "this week", pass `since` and `until` (YYYY-MM-DD; `until` is exclusive).

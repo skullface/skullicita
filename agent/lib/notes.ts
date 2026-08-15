@@ -1,3 +1,5 @@
+import { toListTimeBound } from "./google-calendar";
+import { getEffectiveTimeZone } from "./preferences";
 import { get, put } from "@vercel/blob";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -139,9 +141,47 @@ export async function appendNote(
   return entry;
 }
 
-export async function listNotes(limit = 20): Promise<Note[]> {
+export type ListNotesOptions = {
+  limit?: number;
+  /** Inclusive start. YYYY-MM-DD or RFC3339; bare datetimes use timeZone. */
+  since?: string;
+  /** Exclusive end. YYYY-MM-DD or RFC3339; bare datetimes use timeZone. */
+  until?: string;
+  /** IANA timezone for interpreting bare date/datetime bounds. */
+  timeZone?: string;
+};
+
+export async function listNotes(options: ListNotesOptions = {}): Promise<Note[]> {
   const store = await readNotesStore();
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50));
+
+  let sinceMs: number | undefined;
+  let untilMs: number | undefined;
+
+  if (options.since?.trim() || options.until?.trim()) {
+    const timeZone = options.timeZone?.trim() || (await getEffectiveTimeZone());
+    if (options.since?.trim()) {
+      sinceMs = Date.parse(toListTimeBound(options.since, timeZone));
+      if (Number.isNaN(sinceMs)) {
+        throw new Error(`Invalid since bound "${options.since}"`);
+      }
+    }
+    if (options.until?.trim()) {
+      untilMs = Date.parse(toListTimeBound(options.until, timeZone));
+      if (Number.isNaN(untilMs)) {
+        throw new Error(`Invalid until bound "${options.until}"`);
+      }
+    }
+  }
+
   return [...store.notes]
+    .filter((note) => {
+      const createdMs = Date.parse(note.createdAt);
+      if (Number.isNaN(createdMs)) return false;
+      if (sinceMs !== undefined && createdMs < sinceMs) return false;
+      if (untilMs !== undefined && createdMs >= untilMs) return false;
+      return true;
+    })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, Math.max(1, Math.min(limit, 50)));
+    .slice(0, limit);
 }
