@@ -1,4 +1,14 @@
+import type { RouteHandlerArgs } from "eve/channels";
+
+import photon from "../channels/photon";
 import { photonCredentials } from "../channels/photon";
+
+export const appAuth = {
+  authenticator: "app",
+  principalId: "eve:app",
+  principalType: "runtime",
+  attributes: {},
+} as const;
 
 export function imessageThreadId(phone: string): string {
   return `imessage:iMessage;-;${phone.trim()}`;
@@ -23,4 +33,21 @@ export async function listPhotonUserPhones(): Promise<string[]> {
     throw new Error("Photon project has no registered users to notify.");
   }
   return [...new Set(phones)];
+}
+
+/** Proactive iMessage via the photon channel (same pattern as schedules). */
+export async function notifyPhotonUsers(
+  to: RouteHandlerArgs["to"],
+  message: string,
+): Promise<void> {
+  const notifyText = `Reply with exactly this text and nothing else:\n\n${message}`;
+  const phones = await listPhotonUserPhones();
+  await Promise.all(
+    phones.map((phone) =>
+      to(photon, {
+        adapterName: "imessage",
+        threadId: imessageThreadId(phone),
+      }).send(notifyText, { auth: appAuth }),
+    ),
+  );
 }

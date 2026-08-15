@@ -2,17 +2,9 @@ import crypto from "node:crypto";
 
 import { defineChannel, POST } from "eve/channels";
 
-import { imessageThreadId, listPhotonUserPhones } from "../lib/photon-notify";
-import photon from "./photon";
+import { notifyPhotonUsers } from "../lib/photon-notify";
 
 const WEBHOOK_ROUTE = "/eve/v1/vercel-deployments";
-
-const appAuth = {
-  authenticator: "app",
-  principalId: "eve:app",
-  principalType: "runtime",
-  attributes: {},
-} as const;
 
 interface VercelDeploymentWebhookEvent {
   id: string;
@@ -80,23 +72,13 @@ export default defineChannel({
       }
 
       const message = formatDeploymentFailure(event);
-      const notifyText = `Reply with exactly this text and nothing else:\n\n${message}`;
 
       waitUntil(
         (async () => {
           console.log(
             `[vercel-deployments] deployment failed for ${event.payload.deployment?.name ?? "unknown project"}`,
           );
-
-          const phones = await listPhotonUserPhones();
-          await Promise.all(
-            phones.map((phone) =>
-              to(photon, {
-                adapterName: "imessage",
-                threadId: imessageThreadId(phone),
-              }).send(notifyText, { auth: appAuth }),
-            ),
-          );
+          await notifyPhotonUsers(to, message);
         })(),
       );
 
