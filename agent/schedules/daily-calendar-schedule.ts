@@ -1,6 +1,6 @@
 import { defineSchedule } from "eve/schedules";
 
-import photon, { photonCredentials } from "../channels/photon";
+import photon from "../channels/photon";
 import {
   formatScheduleListing,
   listCalendarAliases,
@@ -9,6 +9,7 @@ import {
   toListTimeBound,
   type CalendarEvent,
 } from "../lib/google-calendar";
+import { imessageThreadId, listPhotonUserPhones } from "../lib/photon-notify";
 import { getEffectiveTimeZone } from "../lib/preferences";
 
 /** 8:27am America/New_York in UTC for both EDT (12) and EST (13). */
@@ -27,31 +28,6 @@ function isLocalClock(date: Date, timeZone: string, hour: number, minute: number
   const h = Number(parts.find((part) => part.type === "hour")?.value);
   const m = Number(parts.find((part) => part.type === "minute")?.value);
   return h === hour && m === minute;
-}
-
-function imessageThreadId(phone: string): string {
-  return `imessage:iMessage;-;${phone.trim()}`;
-}
-
-async function listPhotonUserPhones(): Promise<string[]> {
-  const { projectId, projectSecret } = await photonCredentials();
-  const auth = Buffer.from(`${projectId}:${projectSecret}`).toString("base64");
-  const res = await fetch(`https://spectrum.photon.codes/projects/${encodeURIComponent(projectId)}/users/`, {
-    headers: { authorization: `Basic ${auth}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Photon list users failed: ${res.status} ${res.statusText}`);
-  }
-  const body = (await res.json()) as {
-    data?: { users?: Array<{ phoneNumber?: string }> };
-  };
-  const phones = (body.data?.users ?? [])
-    .map((user) => user.phoneNumber?.trim())
-    .filter((phone): phone is string => Boolean(phone));
-  if (phones.length === 0) {
-    throw new Error("Photon project has no registered users to notify.");
-  }
-  return [...new Set(phones)];
 }
 
 function localYmd(date: Date, timeZone: string): string {
@@ -103,7 +79,7 @@ async function listTodaysMatchingEvents(): Promise<{
 
 export default defineSchedule({
   cron: CRON,
-  async run({ receive, waitUntil, appAuth }) {
+  async run({ to, waitUntil, appAuth }) {
     if (!isLocalClock(new Date(), TIME_ZONE, LOCAL_HOUR, LOCAL_MINUTE)) return;
 
     waitUntil(
@@ -124,12 +100,10 @@ export default defineSchedule({
         const phones = await listPhotonUserPhones();
         await Promise.all(
           phones.map((phone) =>
-            receive(photon, {
-              message: `Reply with exactly this text and nothing else:\n\n${listing}`,
-              target: {
-                adapterName: "imessage",
-                threadId: imessageThreadId(phone),
-              },
+            to(photon, {
+              adapterName: "imessage",
+              threadId: imessageThreadId(phone),
+            }).send(`Reply with exactly this text and nothing else:\n\n${listing}`, {
               auth: appAuth,
             }),
           ),

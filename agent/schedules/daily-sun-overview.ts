@@ -1,8 +1,9 @@
 import { defineSchedule } from "eve/schedules";
 
-import photon, { photonCredentials } from "../channels/photon";
+import photon from "../channels/photon";
+import { imessageThreadId, listPhotonUserPhones } from "../lib/photon-notify";
 
-/** 8:28am America/New_York in UTC for both EDT (12) and EST (13). */
+/** 8:27am America/New_York in UTC for both EDT (12) and EST (13). */
 const CRON = "27 12,13 * * *";
 const TIME_ZONE = "America/New_York";
 const LOCAL_HOUR = 8;
@@ -20,34 +21,9 @@ function isLocalClock(date: Date, timeZone: string, hour: number, minute: number
   return h === hour && m === minute;
 }
 
-function imessageThreadId(phone: string): string {
-  return `imessage:iMessage;-;${phone.trim()}`;
-}
-
-async function listPhotonUserPhones(): Promise<string[]> {
-  const { projectId, projectSecret } = await photonCredentials();
-  const auth = Buffer.from(`${projectId}:${projectSecret}`).toString("base64");
-  const res = await fetch(`https://spectrum.photon.codes/projects/${encodeURIComponent(projectId)}/users/`, {
-    headers: { authorization: `Basic ${auth}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Photon list users failed: ${res.status} ${res.statusText}`);
-  }
-  const body = (await res.json()) as {
-    data?: { users?: Array<{ phoneNumber?: string }> };
-  };
-  const phones = (body.data?.users ?? [])
-    .map((user) => user.phoneNumber?.trim())
-    .filter((phone): phone is string => Boolean(phone));
-  if (phones.length === 0) {
-    throw new Error("Photon project has no registered users to notify.");
-  }
-  return [...new Set(phones)];
-}
-
 export default defineSchedule({
   cron: CRON,
-  async run({ receive, waitUntil, appAuth }) {
+  async run({ to, waitUntil, appAuth }) {
     if (!isLocalClock(new Date(), TIME_ZONE, LOCAL_HOUR, LOCAL_MINUTE)) return;
 
     waitUntil(
@@ -57,15 +33,13 @@ export default defineSchedule({
         const phones = await listPhotonUserPhones();
         await Promise.all(
           phones.map((phone) =>
-            receive(photon, {
-              message:
-                "Send today's daily sun overview (UV, cloud cover, sunset) using the daily sun overview skill. Reply only with that overview.",
-              target: {
-                adapterName: "imessage",
-                threadId: imessageThreadId(phone),
-              },
-              auth: appAuth,
-            }),
+            to(photon, {
+              adapterName: "imessage",
+              threadId: imessageThreadId(phone),
+            }).send(
+              "Send today's daily sun overview (UV, cloud cover, sunset) using the daily sun overview skill. Reply only with that overview.",
+              { auth: appAuth },
+            ),
           ),
         );
       })(),
