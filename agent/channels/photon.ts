@@ -5,7 +5,8 @@ import { photonIMessageChannel } from "eve/channels/photon";
 export const photonCredentials = connectPhotonCredentials("photon/skullicita");
 
 const NTS_PREFIX = /^nts(?:\s+|$)/i;
-const NTS_ACK_EMOJI = "✍️";
+// iMessage tapbacks only support native reactions (like, love, laugh, …), not arbitrary emoji.
+const NTS_ACK_TAPBACK = "like";
 
 type IMessageSidecar = {
   markRead(threadId: string, messageId: string): Promise<void>;
@@ -32,12 +33,26 @@ export default photonIMessageChannel({
         sender: message.author.fullName,
         messageId: message.id,
       });
-
-      const adapter = ctx.thread.adapter as IMessageSidecar;
-      await adapter.markRead(ctx.thread.id, message.id);
-      await adapter.addReaction(ctx.thread.id, message.id, NTS_ACK_EMOJI);
     } catch (error) {
       console.error("[photon] failed to capture nts note", error);
+      return null;
+    }
+
+    const adapter = ctx.thread.adapter as IMessageSidecar;
+    try {
+      await adapter.markRead(ctx.thread.id, message.id);
+    } catch (error) {
+      console.error("[photon] failed to mark nts note read", error);
+    }
+
+    try {
+      await adapter.addReaction(
+        ctx.thread.id,
+        message.id,
+        NTS_ACK_TAPBACK,
+      );
+    } catch (error) {
+      console.error("[photon] failed to react to nts note", error);
     }
 
     return null;
