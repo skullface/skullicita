@@ -9,6 +9,7 @@ import {
 } from "./moma-film-watch-store";
 
 export const MOMA_FILM_WATCH_DATES = [
+  "2026-10-09",
   "2026-10-23",
   "2026-10-24",
   "2026-10-25",
